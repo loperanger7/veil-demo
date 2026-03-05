@@ -1,0 +1,123 @@
+// VEIL Protocol — Wire Format Definitions
+// Spec reference: Section 9 (API & Wire Format)
+//
+// All messages between the Veil client and the Veil Relay Service use
+// Protocol Buffers v3 serialization, transmitted over HTTP/2 within the
+// TLS 1.3 channel.
+
+syntax = "proto3";
+package veil;
+
+// ═══════════════════════════════════════════════════════════
+// Section 9.1: Envelope Format
+// ═══════════════════════════════════════════════════════════
+
+// The outer envelope transmitted between client and relay.
+// The relay can read only the routing fields (registration_id, device_id).
+// All other fields are opaque ciphertext.
+message VeilEnvelope {
+    uint32 version          = 1;  // Protocol version (currently 1)
+    bytes  sealed_sender    = 2;  // Encrypted sender certificate (opaque to relay)
+    uint32 registration_id  = 3;  // Recipient's registration ID
+    uint32 device_id        = 4;  // Recipient's device ID
+    bytes  content          = 5;  // Encrypted message content (opaque to relay)
+    uint64 server_timestamp = 6;  // Set by relay on receipt (untrusted by client)
+    bytes  server_guid      = 7;  // Opaque delivery identifier (set by relay)
+}
+
+// ═══════════════════════════════════════════════════════════
+// Section 9.3: Prekey Bundle Format
+// ═══════════════════════════════════════════════════════════
+
+message PrekeyBundle {
+    bytes  identity_key_ed25519   = 1;   // 32 bytes
+    bytes  identity_key_mldsa65   = 2;   // ML-DSA-65 public key (1952 bytes)
+    uint32 signed_prekey_id       = 3;
+    bytes  signed_prekey          = 4;   // X25519 public key (32 bytes)
+    bytes  signed_prekey_sig      = 5;   // Ed25519 signature over signed_prekey
+    bytes  pq_signed_prekey       = 6;   // ML-KEM-1024 public key (1568 bytes)
+    bytes  pq_signed_prekey_sig   = 7;   // Ed25519 signature over pq_signed_prekey
+    repeated OneTimePrekey  opks    = 8; // Classical one-time prekeys
+    repeated PQOneTimePrekey pq_opks = 9; // Post-quantum one-time prekeys
+}
+
+message OneTimePrekey {
+    uint32 id         = 1;
+    bytes  public_key = 2;  // X25519 public key (32 bytes)
+}
+
+message PQOneTimePrekey {
+    uint32 id         = 1;
+    bytes  public_key = 2;  // ML-KEM-1024 public key (1568 bytes)
+}
+
+// ═══════════════════════════════════════════════════════════
+// API Request/Response Messages
+// ═══════════════════════════════════════════════════════════
+
+// Device registration
+message RegistrationRequest {
+    // Phone number verification is handled out-of-band.
+    // This request creates a device entry after verification.
+    bytes  identity_key_ed25519 = 1;
+    bytes  identity_key_mldsa65 = 2;
+    bytes  apns_token           = 3;  // Optional: APNs push token
+}
+
+message RegistrationResponse {
+    uint32 registration_id = 1;
+    uint32 device_id       = 2;
+    // Initial batch of anonymous credential tokens
+    repeated BlindedToken initial_tokens = 3;
+}
+
+// Anonymous credentials (Ristretto255 blind signatures)
+message BlindedToken {
+    bytes blinded_point = 1;  // Ristretto255 point (32 bytes)
+    bytes signature     = 2;  // Server's blind signature (32 bytes)
+}
+
+message SpentToken {
+    bytes token     = 1;  // Unblinded Ristretto255 point (32 bytes)
+    bytes signature = 2;  // Corresponding unblinded signature (32 bytes)
+}
+
+// Prekey upload
+message UploadPrekeysRequest {
+    uint32       registration_id = 1;
+    PrekeyBundle bundle          = 2;
+    SpentToken   auth_token      = 3;  // Anonymous credential
+}
+
+// Prekey fetch response
+message FetchPrekeysResponse {
+    PrekeyBundle bundle = 1;
+    // One classical OTP and one PQ OTP are consumed and returned.
+    // Remaining pool sizes are not disclosed (prevents enumeration).
+}
+
+// Message send
+message SendMessageRequest {
+    VeilEnvelope envelope   = 1;
+    SpentToken   auth_token = 2;  // Anonymous credential
+}
+
+// Message retrieval
+message RetrieveMessagesResponse {
+    repeated VeilEnvelope envelopes = 1;
+    // Fresh tokens if client's balance is low
+    repeated BlindedToken fresh_tokens = 2;
+}
+
+// Message acknowledgment
+message AcknowledgeRequest {
+    bytes server_guid = 1;
+}
+
+// Push notification registration
+message PushTokenRequest {
+    uint32 registration_id = 1;
+    uint32 device_id       = 2;
+    bytes  apns_token      = 3;
+    SpentToken auth_token  = 4;
+}
