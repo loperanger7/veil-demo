@@ -2,6 +2,8 @@
 
 Interactive web demo for **Veil** — Post-Quantum Encrypted Chat & Payments.
 
+**Live:** [veil-demo.vercel.app](https://veil-demo.vercel.app)
+
 ## Run locally
 
 ```bash
