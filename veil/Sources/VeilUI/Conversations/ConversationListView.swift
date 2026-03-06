@@ -29,12 +29,16 @@ public struct ConversationListView: View {
     public var body: some View {
         List {
             if viewModel.filteredConversations.isEmpty && !viewModel.searchText.isEmpty {
-                ContentUnavailableView.search(text: viewModel.searchText)
+                VeilEmptyStateView(
+                    title: "No results for \"\(viewModel.searchText)\"",
+                    systemImage: "magnifyingglass",
+                    description: "Try a different search."
+                )
             } else if viewModel.filteredConversations.isEmpty {
-                ContentUnavailableView(
-                    "No conversations",
+                VeilEmptyStateView(
+                    title: "No conversations",
                     systemImage: "bubble.left.and.bubble.right",
-                    description: Text("Tap the compose button to start a conversation.")
+                    description: "Tap the compose button to start a conversation."
                 )
             } else {
                 ForEach(viewModel.filteredConversations) { item in

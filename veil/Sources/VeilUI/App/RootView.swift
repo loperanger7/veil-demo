@@ -29,10 +29,10 @@ struct RootView: View {
                 if let context = contextManager.context {
                     ConversationListView(context: context)
                 } else {
-                    ContentUnavailableView(
-                        "No conversations yet",
+                    VeilEmptyStateView(
+                        title: "No conversations yet",
                         systemImage: "bubble.left.and.bubble.right",
-                        description: Text("Start a new conversation to get going.")
+                        description: "Start a new conversation to get going."
                     )
                 }
             }

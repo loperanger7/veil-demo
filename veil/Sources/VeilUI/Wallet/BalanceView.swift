@@ -51,10 +51,10 @@ public struct BalanceView: View {
             // Transaction history
             if transactions.isEmpty {
                 Spacer()
-                ContentUnavailableView(
-                    "No transactions",
+                VeilEmptyStateView(
+                    title: "No transactions",
                     systemImage: "arrow.left.arrow.right",
-                    description: Text("Send or receive a payment to see it here.")
+                    description: "Send or receive a payment to see it here."
                 )
                 Spacer()
             } else {
