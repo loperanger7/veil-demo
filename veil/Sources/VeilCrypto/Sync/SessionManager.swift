@@ -114,7 +114,7 @@ public actor SessionManager {
         )
 
         switch trustState {
-        case .changed(let previousKey):
+        case .changed(_):
             // Identity key changed — this could be a MITM attack or
             // the peer re-registered. The caller should warn the user.
             throw VeilError.signatureVerificationFailed
@@ -123,7 +123,7 @@ public actor SessionManager {
         }
 
         // Step 3: Convert wire bundle to crypto bundle
-        let cryptoBundle = try convertToCryptoBundle(wireBundle)
+        let cryptoBundle = convertToCryptoBundle(wireBundle)
 
         // Step 4: Verify prekey signatures
         guard cryptoBundle.verifySignatures() else {
@@ -267,7 +267,7 @@ public actor SessionManager {
         for peerRegistrationId: UInt32,
         ratchetSession: TripleRatchetSession
     ) {
-        guard var session = sessions[peerRegistrationId] else { return }
+        guard let session = sessions[peerRegistrationId] else { return }
 
         sessions[peerRegistrationId] = VeilSession(
             peerRegistrationId: session.peerRegistrationId,
@@ -328,8 +328,8 @@ public actor SessionManager {
     /// Convert a wire-format prekey bundle to the crypto layer's PrekeyBundle.
     private func convertToCryptoBundle(
         _ wire: RelayPrekeyBundle
-    ) throws -> PrekeyBundle {
-        try PrekeyBundle(
+    ) -> PrekeyBundle {
+        PrekeyBundle(
             identityKeyEd25519: wire.identityKeyEd25519,
             identityKeyMLDSA: wire.identityKeyMLDSA,
             signedPrekeyId: wire.signedPrekeyId,
