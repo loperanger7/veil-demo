@@ -89,7 +89,7 @@ public actor DeviceRegistration {
             // Phase 1: Generate identity keys
             state = .generatingKeys
 
-            let identityKeyPair = try await IdentityKeyPair.generate()
+            let identityKeyPair = try await IdentityKeyPair.generate(enclave: SecureEnclaveManager())
 
             // Phase 2: Generate blinded tokens for anonymous credentials
             let (wireTokens, blindingContexts) = try tokenClient.prepareTokenRequest(

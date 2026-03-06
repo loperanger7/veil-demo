@@ -38,7 +38,7 @@ public struct TripleRatchetSession: Sendable {
     // MARK: - Types
 
     /// An encrypted message envelope containing all data needed for decryption.
-    public struct Envelope: Sendable {
+    public struct Envelope: Sendable, Codable {
         /// Our ephemeral public key at time of encryption (for DH ratchet).
         public let ephemeralKey: Data
 

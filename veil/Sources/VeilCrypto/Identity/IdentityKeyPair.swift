@@ -28,6 +28,9 @@ public struct IdentityKeyPair: Sendable {
     /// Ed25519 public key (32 bytes).
     public let ed25519PublicKey: Data
 
+    /// Alias for Ed25519 public key (used by MessagePipeline sealed sender).
+    public var publicKeyEd25519: Data { ed25519PublicKey }
+
     /// ML-DSA-65 public key (1952 bytes).
     public let mldsaPublicKey: Data
 
@@ -37,6 +40,13 @@ public struct IdentityKeyPair: Sendable {
     /// This reference is used only for delegation; the raw bytes
     /// never leave the Secure Enclave on supported hardware.
     internal let enclaveManager: SecureEnclaveManager
+
+    /// X25519 agreement private key for sealed sender ECDH.
+    /// Generated alongside the Ed25519 signing key during identity creation.
+    internal let _agreementKey: Curve25519.KeyAgreement.PrivateKey
+
+    /// X25519 agreement private key (used by MessagePipeline for sealed sender).
+    public var agreementPrivateKey: Curve25519.KeyAgreement.PrivateKey { _agreementKey }
 
     /// ML-DSA-65 secret key (4032 bytes), encrypted at rest.
     /// Decrypted into `SecureBytes` only for signing operations.
@@ -57,13 +67,17 @@ public struct IdentityKeyPair: Sendable {
         let seKey = try await enclave.generateIdentityKey()
         let ed25519Pub = seKey.publicKey.rawRepresentation
 
-        // Step 2: Generate ML-DSA-65 key pair via liboqs
+        // Step 2: Generate X25519 agreement key for sealed sender ECDH
+        let agreementKey = Curve25519.KeyAgreement.PrivateKey()
+
+        // Step 3: Generate ML-DSA-65 key pair via liboqs
         let (mldsaPub, mldsaSec) = try generateMLDSA65KeyPair()
 
         return IdentityKeyPair(
             ed25519PublicKey: ed25519Pub,
             mldsaPublicKey: mldsaPub,
             enclaveManager: enclave,
+            _agreementKey: agreementKey,
             mldsaSecretKey: mldsaSec
         )
     }

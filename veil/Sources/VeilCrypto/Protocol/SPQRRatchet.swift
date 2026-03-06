@@ -302,10 +302,10 @@ public struct SPQRRatchet: Sendable {
 // MARK: - Fragment Type
 
 /// A single fragment of an SPQR key or ciphertext exchange.
-public struct SPQRFragment: Sendable {
+public struct SPQRFragment: Sendable, Codable {
 
     /// Whether this fragment contains public key or ciphertext data.
-    public enum FragmentType: UInt8, Sendable {
+    public enum FragmentType: UInt8, Sendable, Codable {
         case publicKey = 0x01
         case ciphertext = 0x02
     }

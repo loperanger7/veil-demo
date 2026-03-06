@@ -327,7 +327,7 @@ public actor MessagePipeline {
     /// Decrypt a sealed sender blob to recover the sender's identity.
     private func unsealSender(sealedData: Data) throws -> SealedSenderHeader {
         guard sealedData.count > 32 else {
-            throw VeilError.decryptionFailed
+            throw VeilError.decryptionFailed(reason: "Sealed sender data too short")
         }
 
         // Extract ephemeral public key (first 32 bytes)
