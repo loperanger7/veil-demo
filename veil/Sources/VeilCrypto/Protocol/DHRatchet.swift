@@ -162,7 +162,7 @@ public struct DHRatchet: Sendable {
 
     /// Derive the next sending message key.
     public mutating func nextSendingKey() throws -> SecureBytes {
-        guard sendingChain != nil else {
+        if sendingChain == nil {
             _ = try ratchetForSending()
         }
         return try sendingChain!.advance()
