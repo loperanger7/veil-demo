@@ -53,7 +53,7 @@ public struct SettingsView: View {
             }
 
             // Linked Devices
-            Section("Linked Devices") {
+            Section(header: Text("Linked Devices")) {
                 NavigationLink {
                     LinkedDevicesPlaceholder()
                 } label: {
@@ -62,7 +62,7 @@ public struct SettingsView: View {
             }
 
             // Notifications
-            Section("Notifications") {
+            Section(header: Text("Notifications"), footer: Text("Message previews are always disabled for privacy.")) {
                 Toggle("Enable Notifications", isOn: $notificationsEnabled)
 
                 HStack {
@@ -71,12 +71,10 @@ public struct SettingsView: View {
                     Text("Off")
                         .foregroundColor(VeilColors.secondaryText)
                 }
-            } footer: {
-                Text("Message previews are always disabled for privacy.")
             }
 
             // About
-            Section("About") {
+            Section(header: Text("About")) {
                 HStack {
                     Text("Version")
                     Spacer()
