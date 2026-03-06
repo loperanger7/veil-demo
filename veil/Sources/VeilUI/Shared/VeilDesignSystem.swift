@@ -11,7 +11,6 @@
 // lock icons, no "encrypted" badges, no security theater UI.
 
 import SwiftUI
-import UIKit
 
 // MARK: - Colors
 
@@ -24,10 +23,10 @@ public enum VeilColors {
     public static let outgoingBubble = Color.blue.opacity(0.12)
 
     /// Incoming message bubble background — clean white.
-    public static let incomingBubble = Color(uiColor: .systemBackground)
+    public static let incomingBubble = Color(white: 1.0)
 
     /// Incoming message bubble border — whisper-thin separator.
-    public static let incomingBubbleBorder = Color(uiColor: .separator).opacity(0.3)
+    public static let incomingBubbleBorder = Color.gray.opacity(0.3)
 
     /// Payment bubble gradient — start color.
     public static let paymentGradientStart = Color.blue.opacity(0.6)
@@ -39,13 +38,13 @@ public enum VeilColors {
     public static let unreadBadge = Color.blue
 
     /// Timestamp and secondary text.
-    public static let secondaryText = Color(uiColor: .secondaryLabel)
+    public static let secondaryText = Color.secondary
 
     /// Composer background.
-    public static let composerBackground = Color(uiColor: .systemGray6)
+    public static let composerBackground = Color(.sRGB, white: 0.95, opacity: 1.0)
 
     /// Subtle divider.
-    public static let divider = Color(uiColor: .separator).opacity(0.5)
+    public static let divider = Color.gray.opacity(0.3)
 }
 
 // MARK: - Typography
