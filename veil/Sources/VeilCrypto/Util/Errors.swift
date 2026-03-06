@@ -71,4 +71,7 @@ public enum VeilError: Error, Equatable, Sendable {
 
     /// Attempted to use a SecureBytes buffer after it was zeroized.
     case useAfterZeroize
+
+    /// Cryptographic random number generation failed.
+    case randomGenerationFailed
 }

@@ -140,7 +140,7 @@ public actor FogClient {
         }
 
         // 3. Encrypt and send view key
-        let viewKeyData = viewKey.withUnsafeBytes { Data($0) }
+        let viewKeyData = try viewKey.withUnsafeBytes { Data($0) }
         let registrationBody = FogRegistrationRequest(
             encryptedViewKey: viewKeyData.base64EncodedString(),
             enclaveId: attestation.enclaveId
@@ -279,7 +279,7 @@ public actor FogClient {
 
         // Decrypt amounts and add to cached TXOs
         for incoming in newTXOs {
-            if let amount = await mobClient.decryptTXOAmount(
+            if let amount = try await mobClient.decryptTXOAmount(
                 encryptedAmount: incoming.encryptedAmount,
                 sharedSecret: incoming.sharedSecret,
                 viewKey: viewKey

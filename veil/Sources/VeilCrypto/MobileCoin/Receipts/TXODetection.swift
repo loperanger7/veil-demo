@@ -48,7 +48,7 @@ public struct TXODetector: Sendable {
         receipt: PaymentReceiptMessage,
         incomingTXOs: [IncomingTXO],
         viewKey: SecureBytes
-    ) async -> DetectedTXO? {
+    ) async throws -> DetectedTXO? {
         guard let sharedSecretData = Data(base64Encoded: receipt.sharedSecret) else {
             return nil
         }
@@ -57,7 +57,7 @@ public struct TXODetector: Sendable {
         for txo in incomingTXOs {
             if txo.sharedSecret == sharedSecretData {
                 // Decrypt the amount using the view key
-                if let amount = await mobClient.decryptTXOAmount(
+                if let amount = try await mobClient.decryptTXOAmount(
                     encryptedAmount: txo.encryptedAmount,
                     sharedSecret: sharedSecretData,
                     viewKey: viewKey
@@ -89,11 +89,11 @@ public struct TXODetector: Sendable {
         receipts: [PaymentReceiptMessage],
         incomingTXOs: [IncomingTXO],
         viewKey: SecureBytes
-    ) async -> [DetectedTXO] {
+    ) async throws -> [DetectedTXO] {
         var detected: [DetectedTXO] = []
 
         for receipt in receipts {
-            if let txo = await findIncomingTXO(
+            if let txo = try await findIncomingTXO(
                 receipt: receipt,
                 incomingTXOs: incomingTXOs,
                 viewKey: viewKey

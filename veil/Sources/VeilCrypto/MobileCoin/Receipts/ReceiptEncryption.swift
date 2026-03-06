@@ -132,7 +132,7 @@ public struct ReceiptVerifier: Sendable {
         receipt: PaymentReceiptMessage,
         viewKey: SecureBytes,
         incomingTXOs: [IncomingTXO]
-    ) async -> ReceiptVerificationResult {
+    ) async throws -> ReceiptVerificationResult {
         // 1. Basic validation
         guard receipt.isValid else {
             return .invalid(reason: "Receipt failed basic validation.")
@@ -153,7 +153,7 @@ public struct ReceiptVerifier: Sendable {
         }
 
         // 3. Decrypt the amount and verify it matches the receipt
-        if let decryptedAmount = await mobClient.decryptTXOAmount(
+        if let decryptedAmount = try await mobClient.decryptTXOAmount(
             encryptedAmount: txo.encryptedAmount,
             sharedSecret: sharedSecretData,
             viewKey: viewKey

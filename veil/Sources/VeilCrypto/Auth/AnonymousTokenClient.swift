@@ -81,8 +81,8 @@ public struct AnonymousTokenClient: Sendable {
             // Using SHA-256(r) to map to a valid Ristretto point
             // (simplified — in production use proper Ristretto255 scalar multiply)
             let hashInput = scalarBytes
-            let hash = SHA256.hash(data: hashInput)
-            let blindedPoint = Data(hash)
+            let hash = SHA256.hash(data: Data(hashInput))
+            let blindedPoint = Data(hash.compactMap { $0 })
 
             // Zero the stack copy
             scalarBytes.withUnsafeMutableBufferPointer { buffer in
@@ -131,11 +131,11 @@ public struct AnonymousTokenClient: Sendable {
             }
 
             var unblindedBytes = [UInt8](repeating: 0, count: 32)
-            context.blindingFactor.withUnsafeBytes { blindingBytes in
-                let blindingHash = SHA256.hash(data: Data(blindingBytes))
+            try context.blindingFactor.withUnsafeBytes { blindingBytes in
+                let blindingHash = Array(SHA256.hash(data: Data(blindingBytes)))
                 let signedBytes = [UInt8](signed.point)
                 for i in 0..<32 {
-                    unblindedBytes[i] = signedBytes[i] ^ blindingHash[blindingHash.startIndex.advanced(by: i)]
+                    unblindedBytes[i] = signedBytes[i] ^ blindingHash[i]
                 }
             }
 
