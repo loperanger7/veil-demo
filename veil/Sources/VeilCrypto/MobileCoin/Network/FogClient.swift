@@ -172,7 +172,7 @@ public actor FogClient {
     /// - Returns: Balance in picoMOB.
     /// - Throws: `MobileCoinError.fogServiceUnavailable` only if no cache exists.
     public func queryBalance() async throws -> UInt64 {
-        guard isRegistered else {
+        if !isRegistered {
             // Try to register first
             try await registerViewKey()
         }
@@ -224,7 +224,7 @@ public actor FogClient {
     /// - Returns: Newly detected incoming TXOs.
     /// - Throws: `MobileCoinError.fogServiceUnavailable`.
     public func detectIncomingTXOs() async throws -> [IncomingTXO] {
-        guard isRegistered else {
+        if !isRegistered {
             try await registerViewKey()
         }
 

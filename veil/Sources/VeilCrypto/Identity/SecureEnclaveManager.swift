@@ -102,7 +102,7 @@ public actor SecureEnclaveManager {
         guard let key = identityKey else {
             throw VeilError.signingFailed(reason: "No identity key loaded")
         }
-        return try key.privateKey.signature(for: data).rawRepresentation
+        return try key.privateKey.signature(for: data)
     }
 
     /// Verify an Ed25519 signature against a public key.
@@ -113,11 +113,7 @@ public actor SecureEnclaveManager {
         data: Data,
         publicKey: Curve25519.Signing.PublicKey
     ) -> Bool {
-        guard let sig = try? Curve25519.Signing.PublicKey.init(
-            rawRepresentation: publicKey.rawRepresentation
-        ) else { return false }
-
-        return sig.isValidSignature(signature, for: data)
+        return publicKey.isValidSignature(signature, for: data)
     }
 
     // MARK: - Key Derivation for Subkeys
