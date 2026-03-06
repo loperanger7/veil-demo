@@ -131,14 +131,15 @@ public actor SessionManager {
         }
 
         // Step 5: Perform PQXDH key agreement (initiator/Alice)
-        let (initiatorMessage, sessionKey) = try PQXDH.initiator(
-            identityKeyPair: identityKeyPair,
-            recipientBundle: cryptoBundle
+        let pqxdhResult = try PQXDH.initiator(
+            identityKey: identityKeyPair.agreementPrivateKey,
+            bundle: cryptoBundle,
+            initialPlaintext: Data()  // Empty for session establishment
         )
 
         // Step 6: Initialize TripleRatchet session
         let ratchetSession = try TripleRatchetSession(
-            sessionKey: sessionKey,
+            sessionKey: pqxdhResult.sessionKey,
             isInitiator: true
         )
 
@@ -191,23 +192,42 @@ public actor SessionManager {
         }
 
         // Look up our prekey private keys that were used
-        guard let spkPrivateKey = await prekeyManager.signedPrekeyPrivateKey() else {
+        guard let spkPrivateKeyBytes = await prekeyManager.signedPrekeyPrivateKey() else {
             throw VeilError.noOneTimePrekeysAvailable
         }
 
-        let pqSpkPrivateKey = await prekeyManager.pqSignedPrekeyPrivateKey()
+        // Reconstruct Curve25519 private key from stored bytes
+        let spkData = try spkPrivateKeyBytes.copyToData()
+        let signedPrekey = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: spkData)
+
+        // Reconstruct ML-KEM-1024 key pair for PQ signed prekey
+        // PrekeyManager stores both public key and secret key in GeneratedSignedPrekey
+        let pqSpkPrivateKeyBytes = await prekeyManager.pqSignedPrekeyPrivateKey()
+        var pqSignedPrekey: MLKEM1024KeyPair? = nil
+        if let pqSecretBytes = pqSpkPrivateKeyBytes,
+           let pqPublicKey = await prekeyManager.pqSignedPrekeyPublicKey() {
+            pqSignedPrekey = MLKEM1024KeyPair.reconstruct(
+                publicKey: pqPublicKey,
+                secretKey: pqSecretBytes
+            )
+        }
+
+        // Deserialize the PQXDH initiator message
+        let pqxdhMessage = try JSONDecoder().decode(PQXDH.InitiatorMessage.self, from: initiatorMessage)
 
         // Run PQXDH responder
-        let (sessionKey, _) = try PQXDH.responder(
-            identityKeyPair: identityKeyPair,
-            signedPrekeyPrivate: spkPrivateKey,
-            pqSignedPrekeyPrivate: pqSpkPrivateKey,
-            initiatorMessage: initiatorMessage
+        let responderResult = try PQXDH.responder(
+            identityKey: identityKeyPair.agreementPrivateKey,
+            signedPrekey: signedPrekey,
+            pqSignedPrekey: pqSignedPrekey ?? (try MLKEM1024KeyPair.generate()),
+            oneTimePrekey: nil,
+            pqOneTimePrekey: nil,
+            message: pqxdhMessage
         )
 
         // Initialize TripleRatchet session
         let ratchetSession = try TripleRatchetSession(
-            sessionKey: sessionKey,
+            sessionKey: responderResult.sessionKey,
             isInitiator: false
         )
 
@@ -317,8 +337,8 @@ public actor SessionManager {
             signedPrekeySig: wire.signedPrekeySig,
             pqSignedPrekey: wire.pqSignedPrekey,
             pqSignedPrekeySig: wire.pqSignedPrekeySig,
-            oneTimePrekeys: wire.oneTimePrekeys.map { ($0.id, $0.publicKey) },
-            pqOneTimePrekeys: wire.pqOneTimePrekeys.map { ($0.id, $0.publicKey) }
+            oneTimePrekeys: wire.oneTimePrekeys.map { OneTimePrekey(id: $0.id, publicKey: $0.publicKey) },
+            pqOneTimePrekeys: wire.pqOneTimePrekeys.map { PQOneTimePrekey(id: $0.id, publicKey: $0.publicKey) }
         )
     }
 }

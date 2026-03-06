@@ -31,6 +31,9 @@ public struct IdentityKeyPair: Sendable {
     /// Alias for Ed25519 public key (used by MessagePipeline sealed sender).
     public var publicKeyEd25519: Data { ed25519PublicKey }
 
+    /// Alias for ML-DSA-65 public key (used by PrekeyManager bundle uploads).
+    public var publicKeyMLDSA: Data { mldsaPublicKey }
+
     /// ML-DSA-65 public key (1952 bytes).
     public let mldsaPublicKey: Data
 

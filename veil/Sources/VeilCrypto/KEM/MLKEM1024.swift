@@ -37,7 +37,7 @@ public struct MLKEM1024KeyPair: KEMKeyPairProtocol {
     public let publicKey: Data
 
     /// ML-KEM-1024 secret key (3168 bytes), stored as SecureBytes for zeroization.
-    private let secretKey: SecureBytes
+    public let secretKey: SecureBytes
 
     // MARK: - Key Generation
 
@@ -86,6 +86,13 @@ public struct MLKEM1024KeyPair: KEMKeyPairProtocol {
             publicKey: publicKey,
             secretKey: SecureBytes(bytes: secretKeyBytes)
         )
+    }
+
+    /// Reconstruct a key pair from previously stored public key and secret key.
+    ///
+    /// Used by SessionManager to rebuild key pairs from PrekeyManager storage.
+    public static func reconstruct(publicKey: Data, secretKey: SecureBytes) -> MLKEM1024KeyPair {
+        MLKEM1024KeyPair(publicKey: publicKey, secretKey: secretKey)
     }
 
     // MARK: - Encapsulation

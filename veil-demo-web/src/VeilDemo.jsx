@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 // ─────────────────────────────────────────────
-// VEIL — Interactive Demo
+// VEIL — Live Demo with WebSocket Chat
 // Post-Quantum Encrypted Chat & Payments
 // ─────────────────────────────────────────────
 
@@ -25,40 +25,153 @@ const Colors = {
   orange: "#FF9F0A",
 };
 
-const sampleContacts = [
-  { id: "alice", name: "Alice Nakamura", avatar: "AN", lastMsg: "The quarterly report looks great!", time: "2:34 PM", unread: 2 },
-  { id: "bob", name: "Bob Chen", avatar: "BC", lastMsg: "Payment received — 2.5 MOB", time: "1:15 PM", unread: 0 },
-  { id: "carol", name: "Carol Whitfield", avatar: "CW", lastMsg: "Can we meet tomorrow?", time: "Yesterday", unread: 0 },
-  { id: "dave", name: "Dave Okafor", avatar: "DO", lastMsg: "Sent you 1.0 MOB", time: "Yesterday", unread: 1 },
-  { id: "eve", name: "Eve Martinez", avatar: "EM", lastMsg: "Safety number verified ✓", time: "Mon", unread: 0 },
-];
+// ─── WebSocket hook ───
+const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:3001";
 
-const sampleMessages = {
-  alice: [
-    { id: 1, text: "Hey! Have you seen the new protocol spec?", incoming: true, time: "2:30 PM" },
-    { id: 2, text: "Yes! The PQXDH handshake is elegant. ML-KEM-1024 for post-quantum security.", incoming: false, time: "2:31 PM" },
-    { id: 3, text: "Agreed. The triple ratchet composition is clean too.", incoming: true, time: "2:32 PM" },
-    { id: 4, text: "The quarterly report looks great!", incoming: true, time: "2:34 PM" },
-  ],
-  bob: [
-    { id: 1, text: "Sending you payment for the design work", incoming: false, time: "1:10 PM" },
-    { id: 2, text: null, incoming: false, time: "1:10 PM", payment: { amount: "2.5", currency: "MOB", memo: "Design work", status: "complete" } },
-    { id: 3, text: "Payment received — 2.5 MOB", incoming: true, time: "1:15 PM" },
-    { id: 4, text: "Thanks! Quick as always.", incoming: true, time: "1:15 PM" },
-  ],
-  dave: [
-    { id: 1, text: null, incoming: true, time: "Yesterday", payment: { amount: "1.0", currency: "MOB", memo: "Lunch", status: "complete" } },
-    { id: 2, text: "Sent you 1.0 MOB", incoming: true, time: "Yesterday" },
-  ],
-};
+function useVeilSocket() {
+  const wsRef = useRef(null);
+  const [connected, setConnected] = useState(false);
+  const [roomId, setRoomId] = useState(null);
+  const [userId, setUserId] = useState(null);
+  const [displayName, setDisplayName] = useState(null);
+  const [peers, setPeers] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [remoteTyping, setRemoteTyping] = useState(null);
+  const reconnectTimer = useRef(null);
+  const handlersRef = useRef({});
 
-const transactions = [
-  { id: 1, peer: "Bob Chen", amount: -2.5, memo: "Design work", date: "Today", time: "1:10 PM" },
-  { id: 2, peer: "Dave Okafor", amount: 1.0, memo: "Lunch", date: "Yesterday", time: "3:45 PM" },
-  { id: 3, peer: "Alice Nakamura", amount: -0.5, memo: "Coffee", date: "Mar 2", time: "9:20 AM" },
-  { id: 4, peer: "Carol Whitfield", amount: 5.0, memo: "Project payment", date: "Mar 1", time: "2:00 PM" },
-  { id: 5, peer: "Eve Martinez", amount: -1.25, memo: "Supplies", date: "Feb 28", time: "11:30 AM" },
-];
+  const connect = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState <= 1) return;
+
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
+
+    ws.onopen = () => setConnected(true);
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      switch (msg.type) {
+        case "joined":
+          setRoomId(msg.roomId);
+          setUserId(msg.userId);
+          setDisplayName(msg.displayName);
+          setPeers(msg.peers);
+          break;
+        case "user_joined":
+          setPeers(prev => [...prev.filter(p => p.userId !== msg.userId), { userId: msg.userId, displayName: msg.displayName }]);
+          setMessages(prev => [...prev, { id: Date.now(), type: "system", text: `${msg.displayName} joined the room` }]);
+          break;
+        case "user_left":
+          setPeers(prev => prev.filter(p => p.userId !== msg.userId));
+          setMessages(prev => [...prev, { id: Date.now(), type: "system", text: `${msg.displayName} left the room` }]);
+          setRemoteTyping(null);
+          break;
+        case "message":
+          setMessages(prev => [...prev, {
+            id: msg.timestamp,
+            type: "chat",
+            text: msg.text,
+            incoming: true,
+            senderName: msg.displayName,
+            senderId: msg.userId,
+            time: new Date(msg.timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+          }]);
+          setRemoteTyping(null);
+          break;
+        case "typing":
+          if (msg.isTyping) {
+            setRemoteTyping(msg.displayName);
+            // Auto-clear after 3s
+            clearTimeout(handlersRef.current.typingTimeout);
+            handlersRef.current.typingTimeout = setTimeout(() => setRemoteTyping(null), 3000);
+          } else {
+            setRemoteTyping(null);
+          }
+          break;
+        case "payment":
+          setMessages(prev => [...prev, {
+            id: msg.timestamp,
+            type: "chat",
+            incoming: true,
+            senderName: msg.displayName,
+            senderId: msg.userId,
+            time: new Date(msg.timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+            payment: { amount: msg.amount, currency: msg.currency, memo: msg.memo, status: "complete" },
+          }]);
+          break;
+      }
+    };
+
+    ws.onclose = () => {
+      setConnected(false);
+      // Reconnect after 2s
+      reconnectTimer.current = setTimeout(connect, 2000);
+    };
+
+    ws.onerror = () => ws.close();
+  }, []);
+
+  const disconnect = useCallback(() => {
+    clearTimeout(reconnectTimer.current);
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    setConnected(false);
+    setRoomId(null);
+    setUserId(null);
+    setPeers([]);
+    setMessages([]);
+    setRemoteTyping(null);
+  }, []);
+
+  const joinRoom = useCallback((room, name) => {
+    if (wsRef.current?.readyState === 1) {
+      wsRef.current.send(JSON.stringify({ type: "join", roomId: room, displayName: name }));
+    }
+  }, []);
+
+  const sendMessage = useCallback((text) => {
+    if (!wsRef.current || wsRef.current.readyState !== 1) return;
+    wsRef.current.send(JSON.stringify({ type: "message", text }));
+    setMessages(prev => [...prev, {
+      id: Date.now(),
+      type: "chat",
+      text,
+      incoming: false,
+      time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+    }]);
+  }, []);
+
+  const sendTyping = useCallback((isTyping) => {
+    if (wsRef.current?.readyState === 1) {
+      wsRef.current.send(JSON.stringify({ type: "typing", isTyping }));
+    }
+  }, []);
+
+  const sendPayment = useCallback((amount, currency, memo) => {
+    if (wsRef.current?.readyState === 1) {
+      wsRef.current.send(JSON.stringify({ type: "payment", amount, currency, memo }));
+      setMessages(prev => [...prev, {
+        id: Date.now(),
+        type: "chat",
+        incoming: false,
+        time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+        payment: { amount, currency, memo, status: "complete" },
+      }]);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(reconnectTimer.current);
+      clearTimeout(handlersRef.current.typingTimeout);
+      if (wsRef.current) wsRef.current.close();
+    };
+  }, []);
+
+  return { connected, roomId, userId, displayName, peers, messages, remoteTyping, connect, disconnect, joinRoom, sendMessage, sendTyping, sendPayment };
+}
 
 // ─── Icons (inline SVG) ───
 const IconSend = () => (
@@ -86,105 +199,189 @@ const IconCheck = () => (
     <polyline points="20 6 9 17 4 12" />
   </svg>
 );
-const IconMessages = ({ active }) => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill={active ? Colors.accent : "none"} stroke={active ? Colors.accent : Colors.textSecondary} strokeWidth="1.5">
-    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+const IconLink = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
   </svg>
 );
-const IconWallet = ({ active }) => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? Colors.accent : Colors.textSecondary} strokeWidth="1.5">
-    <rect x="2" y="4" width="20" height="16" rx="2" /><path d="M2 10h20" /><circle cx="17" cy="14" r="1.5" fill={active ? Colors.accent : Colors.textSecondary} />
+const IconCopy = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
   </svg>
 );
-const IconSettings = ({ active }) => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? Colors.accent : Colors.textSecondary} strokeWidth="1.5">
-    <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+const IconUsers = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={Colors.textSecondary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" />
   </svg>
 );
 
-// ─── TabBar ───
-function TabBar({ tab, setTab }) {
-  const tabs = [
-    { key: "messages", label: "Messages", Icon: IconMessages },
-    { key: "balance", label: "Balance", Icon: IconWallet },
-    { key: "settings", label: "Settings", Icon: IconSettings },
-  ];
+// ─── JoinScreen ───
+function JoinScreen({ onJoin, socket }) {
+  const [name, setName] = useState("");
+  const [room, setRoom] = useState("");
+  const [joining, setJoining] = useState(false);
+
+  const handleJoin = () => {
+    if (!name.trim()) return;
+    setJoining(true);
+    socket.connect();
+    // Wait for connection, then join
+    const check = setInterval(() => {
+      if (socket.connected) {
+        clearInterval(check);
+        socket.joinRoom(room.trim() || "veil-public", name.trim());
+        onJoin();
+      }
+    }, 100);
+    // Timeout after 5s
+    setTimeout(() => { clearInterval(check); setJoining(false); }, 5000);
+  };
+
   return (
-    <div style={{ display: "flex", borderTop: `1px solid ${Colors.separator}`, background: Colors.surface, padding: "6px 0 env(safe-area-inset-bottom, 2px)" }}>
-      {tabs.map(({ key, label, Icon }) => (
-        <button key={key} onClick={() => setTab(key)} style={{ flex: 1, background: "none", border: "none", padding: "6px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-          <Icon active={tab === key} />
-          <span style={{ fontSize: 10, color: tab === key ? Colors.accent : Colors.textSecondary }}>{label}</span>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", background: Colors.bg, padding: 32, gap: 24 }}>
+      {/* Logo */}
+      <div style={{
+        width: 80, height: 80, borderRadius: 20,
+        background: `linear-gradient(135deg, ${Colors.paymentGradientStart}, ${Colors.paymentGradientEnd})`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        boxShadow: "0 8px 32px rgba(10,132,255,0.3)",
+      }}>
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        </svg>
+      </div>
+
+      <div style={{ textAlign: "center" }}>
+        <h1 style={{ color: Colors.text, fontSize: 28, fontWeight: 700, margin: "0 0 6px" }}>Veil</h1>
+        <p style={{ color: Colors.textSecondary, fontSize: 14, margin: 0 }}>Post-Quantum Encrypted Chat</p>
+      </div>
+
+      <div style={{ width: "100%", maxWidth: 300, display: "flex", flexDirection: "column", gap: 12 }}>
+        <input
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="Your display name"
+          onKeyDown={e => e.key === "Enter" && handleJoin()}
+          style={{
+            width: "100%", padding: "14px 16px", borderRadius: 12,
+            border: `1px solid ${Colors.surfaceSecondary}`, background: Colors.surface,
+            color: Colors.text, fontSize: 16, outline: "none", boxSizing: "border-box",
+          }}
+        />
+        <input
+          value={room}
+          onChange={e => setRoom(e.target.value)}
+          placeholder="Room code (or leave blank for public)"
+          onKeyDown={e => e.key === "Enter" && handleJoin()}
+          style={{
+            width: "100%", padding: "14px 16px", borderRadius: 12,
+            border: `1px solid ${Colors.surfaceSecondary}`, background: Colors.surface,
+            color: Colors.text, fontSize: 16, outline: "none", boxSizing: "border-box",
+          }}
+        />
+        <button
+          onClick={handleJoin}
+          disabled={!name.trim() || joining}
+          style={{
+            width: "100%", padding: "14px", borderRadius: 12, border: "none", cursor: name.trim() && !joining ? "pointer" : "default",
+            background: name.trim() && !joining ? `linear-gradient(135deg, ${Colors.paymentGradientStart}, ${Colors.paymentGradientEnd})` : Colors.surfaceSecondary,
+            color: name.trim() ? "#fff" : Colors.textTertiary,
+            fontSize: 17, fontWeight: 600, transition: "all 0.2s",
+          }}
+        >
+          {joining ? "Connecting..." : "Join Chat"}
         </button>
-      ))}
+      </div>
+
+      <div style={{ textAlign: "center", marginTop: 8 }}>
+        <p style={{ color: Colors.textTertiary, fontSize: 12, margin: 0 }}>
+          Share the same room code with a friend to chat live
+        </p>
+        <p style={{ color: Colors.textTertiary, fontSize: 11, margin: "8px 0 0" }}>
+          PQXDH + Triple Ratchet · ML-KEM-1024 · Sealed Sender
+        </p>
+      </div>
     </div>
   );
 }
 
-// ─── ConversationList ───
-function ConversationList({ onSelect }) {
-  const [search, setSearch] = useState("");
-  const filtered = sampleContacts.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+// ─── RoomHeader ───
+function RoomHeader({ roomId, peers, connected, onLeave }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyRoom = () => {
+    navigator.clipboard?.writeText(roomId).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ padding: "12px 16px 4px", fontSize: 28, fontWeight: 700, color: Colors.text }}>Messages</div>
-      <div style={{ padding: "4px 16px 8px" }}>
-        <input
-          placeholder="Search"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ width: "100%", padding: "8px 12px", borderRadius: 10, border: "none", background: Colors.surfaceSecondary, color: Colors.text, fontSize: 15, outline: "none", boxSizing: "border-box" }}
-        />
+    <div style={{
+      display: "flex", alignItems: "center", padding: "10px 12px",
+      borderBottom: `1px solid ${Colors.separator}`, background: Colors.surface, gap: 8,
+    }}>
+      <button onClick={onLeave} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex", alignItems: "center" }}>
+        <IconBack />
+      </button>
+      <div style={{
+        width: 36, height: 36, borderRadius: 18,
+        background: `linear-gradient(135deg, ${Colors.paymentGradientStart}, ${Colors.paymentGradientEnd})`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        <IconUsers />
       </div>
-      <div style={{ flex: 1, overflow: "auto" }}>
-        {filtered.map(c => (
-          <button key={c.id} onClick={() => onSelect(c)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", width: "100%", background: "none", border: "none", borderBottom: `1px solid ${Colors.separator}`, cursor: "pointer", textAlign: "left" }}>
-            <div style={{ width: 48, height: 48, borderRadius: 24, background: `linear-gradient(135deg, ${Colors.paymentGradientStart}, ${Colors.paymentGradientEnd})`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 600, fontSize: 15, flexShrink: 0 }}>
-              {c.avatar}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                <span style={{ color: Colors.text, fontWeight: 600, fontSize: 16 }}>{c.name}</span>
-                <span style={{ color: Colors.textTertiary, fontSize: 13, flexShrink: 0 }}>{c.time}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
-                <span style={{ color: Colors.textSecondary, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.lastMsg}</span>
-                {c.unread > 0 && (
-                  <span style={{ background: Colors.accent, color: "#fff", borderRadius: 10, padding: "1px 7px", fontSize: 12, fontWeight: 600, marginLeft: 8, flexShrink: 0 }}>{c.unread}</span>
-                )}
-              </div>
-            </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ color: Colors.text, fontWeight: 600, fontSize: 16 }}>#{roomId}</span>
+          <button onClick={copyRoom} style={{ background: "none", border: "none", cursor: "pointer", color: Colors.textSecondary, padding: 2, display: "flex" }}>
+            {copied ? <span style={{ fontSize: 11, color: Colors.green }}>Copied!</span> : <IconCopy />}
           </button>
-        ))}
+        </div>
+        <div style={{ fontSize: 12, color: connected ? Colors.green : Colors.red }}>
+          {connected ? `● ${peers.length + 1} in room` : "● Reconnecting..."}
+        </div>
       </div>
+      <button onClick={onLeave} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, color: Colors.accent }}>
+        <IconShield />
+      </button>
     </div>
   );
 }
 
 // ─── MessageBubble ───
 function MessageBubble({ msg }) {
+  if (msg.type === "system") {
+    return (
+      <div style={{ textAlign: "center", padding: "8px 16px" }}>
+        <span style={{ background: Colors.surfaceSecondary, padding: "4px 12px", borderRadius: 10, fontSize: 12, color: Colors.textTertiary }}>
+          {msg.text}
+        </span>
+      </div>
+    );
+  }
+
   if (msg.payment) {
     const isOutgoing = !msg.incoming;
     return (
       <div style={{ display: "flex", justifyContent: isOutgoing ? "flex-end" : "flex-start", padding: "3px 16px" }}>
-        <div style={{
-          background: Colors.surface,
-          border: "2px solid transparent",
-          borderImage: `linear-gradient(135deg, ${Colors.paymentGradientStart}, ${Colors.paymentGradientEnd}) 1`,
-          borderRadius: 18,
-          padding: "12px 16px",
-          maxWidth: "75%",
-          overflow: "hidden",
-        }}>
+        <div style={{ maxWidth: "75%" }}>
+          {msg.incoming && msg.senderName && (
+            <div style={{ fontSize: 11, color: Colors.accent, padding: "0 4px 2px", fontWeight: 600 }}>{msg.senderName}</div>
+          )}
           <div style={{
             background: Colors.surface,
-            borderRadius: 14,
+            border: "2px solid transparent",
+            borderImage: `linear-gradient(135deg, ${Colors.paymentGradientStart}, ${Colors.paymentGradientEnd}) 1`,
+            borderRadius: 18, padding: "12px 16px", overflow: "hidden",
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
               <span style={{ fontSize: 11, color: Colors.textSecondary }}>{isOutgoing ? "↑ Sent" : "↓ Received"}</span>
             </div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: Colors.text }}>{msg.payment.amount} <span style={{ fontSize: 14, color: Colors.textSecondary }}>{msg.payment.currency}</span></div>
+            <div style={{ fontSize: 22, fontWeight: 600, color: Colors.text }}>
+              {msg.payment.amount} <span style={{ fontSize: 14, color: Colors.textSecondary }}>{msg.payment.currency}</span>
+            </div>
             {msg.payment.memo && <div style={{ fontSize: 13, color: Colors.textSecondary, marginTop: 2 }}>{msg.payment.memo}</div>}
             <div style={{ fontSize: 11, color: Colors.green, marginTop: 4 }}>● Confirmed</div>
           </div>
@@ -196,61 +393,63 @@ function MessageBubble({ msg }) {
   const isOutgoing = !msg.incoming;
   return (
     <div style={{ display: "flex", justifyContent: isOutgoing ? "flex-end" : "flex-start", padding: "3px 16px" }}>
-      <div style={{
-        background: isOutgoing ? Colors.outgoing : Colors.incoming,
-        borderRadius: 18,
-        padding: "8px 14px",
-        maxWidth: "75%",
-        borderBottomRightRadius: isOutgoing ? 4 : 18,
-        borderBottomLeftRadius: isOutgoing ? 18 : 4,
-      }}>
-        <div style={{ color: Colors.text, fontSize: 15, lineHeight: 1.4 }}>{msg.text}</div>
-        <div style={{ fontSize: 11, color: isOutgoing ? "rgba(255,255,255,0.5)" : Colors.textTertiary, marginTop: 2, textAlign: "right" }}>{msg.time}</div>
+      <div style={{ maxWidth: "75%" }}>
+        {msg.incoming && msg.senderName && (
+          <div style={{ fontSize: 11, color: Colors.accent, padding: "0 4px 2px", fontWeight: 600 }}>{msg.senderName}</div>
+        )}
+        <div style={{
+          background: isOutgoing ? Colors.outgoing : Colors.incoming,
+          borderRadius: 18, padding: "8px 14px",
+          borderBottomRightRadius: isOutgoing ? 4 : 18,
+          borderBottomLeftRadius: isOutgoing ? 18 : 4,
+        }}>
+          <div style={{ color: Colors.text, fontSize: 15, lineHeight: 1.4 }}>{msg.text}</div>
+          <div style={{ fontSize: 11, color: isOutgoing ? "rgba(255,255,255,0.5)" : Colors.textTertiary, marginTop: 2, textAlign: "right" }}>{msg.time}</div>
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── ChatView ───
-function ChatView({ contact, onBack, onPayment, onSafety }) {
-  const [msgs, setMsgs] = useState(sampleMessages[contact.id] || []);
+// ─── LiveChatView ───
+function LiveChatView({ socket, onLeave }) {
   const [draft, setDraft] = useState("");
-  const [typing, setTyping] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
   const scrollRef = useRef(null);
+  const typingTimer = useRef(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
-  }, [msgs]);
+  }, [socket.messages, socket.remoteTyping]);
 
   const send = () => {
     if (!draft.trim()) return;
-    const newMsg = { id: Date.now(), text: draft, incoming: false, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) };
-    setMsgs(prev => [...prev, newMsg]);
+    socket.sendMessage(draft);
     setDraft("");
-    setTyping(true);
-    setTimeout(() => {
-      setTyping(false);
-      setMsgs(prev => [...prev, { id: Date.now() + 1, text: "Message received. End-to-end encrypted with PQXDH + Triple Ratchet.", incoming: true, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) }]);
-    }, 1500);
+    socket.sendTyping(false);
   };
 
-  const addPaymentMsg = (amount, currency, memo) => {
-    const payMsg = { id: Date.now(), text: null, incoming: false, time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), payment: { amount, currency, memo, status: "complete" } };
-    setMsgs(prev => [...prev, payMsg]);
+  const handleDraftChange = (e) => {
+    setDraft(e.target.value);
+    socket.sendTyping(true);
+    clearTimeout(typingTimer.current);
+    typingTimer.current = setTimeout(() => socket.sendTyping(false), 2000);
   };
+
+  if (showPayment) {
+    return (
+      <PaymentFlow
+        peerName={socket.peers[0]?.displayName || "Room"}
+        onConfirm={(amount, currency, memo) => socket.sendPayment(amount, currency, memo)}
+        onClose={() => setShowPayment(false)}
+      />
+    );
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", padding: "10px 12px", borderBottom: `1px solid ${Colors.separator}`, background: Colors.surface, gap: 8 }}>
-        <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex", alignItems: "center" }}><IconBack /></button>
-        <div style={{ width: 36, height: 36, borderRadius: 18, background: `linear-gradient(135deg, ${Colors.paymentGradientStart}, ${Colors.paymentGradientEnd})`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 600, fontSize: 13 }}>{contact.avatar}</div>
-        <div style={{ flex: 1 }}>
-          <div style={{ color: Colors.text, fontWeight: 600, fontSize: 16 }}>{contact.name}</div>
-          <div style={{ color: Colors.green, fontSize: 12 }}>● Online</div>
-        </div>
-        <button onClick={onSafety} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, color: Colors.accent }}><IconShield /></button>
-      </div>
+      <RoomHeader roomId={socket.roomId} peers={socket.peers} connected={socket.connected} onLeave={onLeave} />
+
       {/* Messages */}
       <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: "8px 0", display: "flex", flexDirection: "column", gap: 2 }}>
         <div style={{ textAlign: "center", padding: "8px 0 12px" }}>
@@ -258,9 +457,10 @@ function ChatView({ contact, onBack, onPayment, onSafety }) {
             Messages are end-to-end encrypted
           </span>
         </div>
-        {msgs.map(m => <MessageBubble key={m.id} msg={m} />)}
-        {typing && (
+        {socket.messages.map(m => <MessageBubble key={m.id} msg={m} />)}
+        {socket.remoteTyping && (
           <div style={{ padding: "3px 16px" }}>
+            <div style={{ fontSize: 11, color: Colors.accent, padding: "0 4px 2px", fontWeight: 600 }}>{socket.remoteTyping}</div>
             <div style={{ background: Colors.incoming, borderRadius: 18, padding: "10px 14px", display: "inline-flex", gap: 4 }}>
               {[0, 1, 2].map(i => (
                 <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: Colors.textSecondary, animation: `bounce 1.2s ${i * 0.2}s infinite` }} />
@@ -268,29 +468,51 @@ function ChatView({ contact, onBack, onPayment, onSafety }) {
             </div>
           </div>
         )}
+        {socket.messages.length === 0 && socket.peers.length === 0 && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, padding: 32, gap: 12 }}>
+            <div style={{ fontSize: 40, opacity: 0.3 }}>
+              <IconLink />
+            </div>
+            <div style={{ color: Colors.textSecondary, fontSize: 15, textAlign: "center" }}>
+              Waiting for someone to join...
+            </div>
+            <div style={{ color: Colors.textTertiary, fontSize: 13, textAlign: "center" }}>
+              Share room code <span style={{ color: Colors.accent, fontWeight: 600 }}>#{socket.roomId}</span> with a friend
+            </div>
+          </div>
+        )}
       </div>
+
       {/* Composer */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderTop: `1px solid ${Colors.separator}`, background: Colors.surface }}>
-        <button onClick={() => onPayment(addPaymentMsg)} style={{ background: "none", border: "none", cursor: "pointer", color: Colors.accent, padding: 4, display: "flex" }}><IconDollar /></button>
+        <button onClick={() => setShowPayment(true)} style={{ background: "none", border: "none", cursor: "pointer", color: Colors.accent, padding: 4, display: "flex" }}>
+          <IconDollar />
+        </button>
         <input
           value={draft}
-          onChange={e => setDraft(e.target.value)}
+          onChange={handleDraftChange}
           onKeyDown={e => e.key === "Enter" && send()}
           placeholder="Message"
           style={{ flex: 1, padding: "8px 14px", borderRadius: 20, border: `1px solid ${Colors.surfaceSecondary}`, background: Colors.surfaceSecondary, color: Colors.text, fontSize: 15, outline: "none" }}
         />
-        <button onClick={send} style={{ background: draft.trim() ? Colors.accent : Colors.surfaceSecondary, border: "none", borderRadius: "50%", width: 34, height: 34, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", transition: "background 0.2s" }}><IconSend /></button>
+        <button onClick={send} style={{
+          background: draft.trim() ? Colors.accent : Colors.surfaceSecondary,
+          border: "none", borderRadius: "50%", width: 34, height: 34, cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", transition: "background 0.2s",
+        }}>
+          <IconSend />
+        </button>
       </div>
     </div>
   );
 }
 
 // ─── PaymentFlow ───
-function PaymentFlow({ contact, onConfirm, onClose }) {
+function PaymentFlow({ peerName, onConfirm, onClose }) {
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("MOB");
   const [memo, setMemo] = useState("");
-  const [step, setStep] = useState("enter"); // enter → confirm → success
+  const [step, setStep] = useState("enter");
   const [animating, setAnimating] = useState(false);
 
   const keypad = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "⌫"];
@@ -317,7 +539,7 @@ function PaymentFlow({ contact, onConfirm, onClose }) {
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", background: Colors.bg, gap: 16 }}>
         <div style={{ animation: "scaleIn 0.4s ease-out" }}><IconCheck /></div>
         <div style={{ color: Colors.text, fontSize: 18, fontWeight: 600 }}>Payment Sent</div>
-        <div style={{ color: Colors.textSecondary, fontSize: 14 }}>{amount} {currency} to {contact.name}</div>
+        <div style={{ color: Colors.textSecondary, fontSize: 14 }}>{amount} {currency} to {peerName}</div>
       </div>
     );
   }
@@ -331,8 +553,10 @@ function PaymentFlow({ contact, onConfirm, onClose }) {
           <div style={{ width: 28 }} />
         </div>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 24 }}>
-          <div style={{ width: 60, height: 60, borderRadius: 30, background: `linear-gradient(135deg, ${Colors.paymentGradientStart}, ${Colors.paymentGradientEnd})`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 600, fontSize: 20 }}>{contact.avatar}</div>
-          <div style={{ color: Colors.textSecondary, fontSize: 15 }}>Send to {contact.name}</div>
+          <div style={{ width: 60, height: 60, borderRadius: 30, background: `linear-gradient(135deg, ${Colors.paymentGradientStart}, ${Colors.paymentGradientEnd})`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 600, fontSize: 20 }}>
+            {peerName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
+          </div>
+          <div style={{ color: Colors.textSecondary, fontSize: 15 }}>Send to {peerName}</div>
           <div style={{ fontSize: 42, fontWeight: 700, color: Colors.text }}>{amount || "0"} <span style={{ fontSize: 20, color: Colors.textSecondary }}>{currency}</span></div>
           {memo && <div style={{ color: Colors.textSecondary, fontSize: 14 }}>"{memo}"</div>}
           <div style={{ background: Colors.surfaceSecondary, borderRadius: 12, padding: "10px 16px", marginTop: 8 }}>
@@ -344,7 +568,7 @@ function PaymentFlow({ contact, onConfirm, onClose }) {
           <button onClick={confirm} style={{
             width: "100%", padding: "16px", borderRadius: 14, border: "none", cursor: "pointer",
             background: animating ? Colors.green : `linear-gradient(135deg, ${Colors.paymentGradientStart}, ${Colors.paymentGradientEnd})`,
-            color: "#fff", fontSize: 17, fontWeight: 600, transition: "all 0.3s"
+            color: "#fff", fontSize: 17, fontWeight: 600, transition: "all 0.3s",
           }}>
             {animating ? "Authenticating..." : "Confirm with Face ID"}
           </button>
@@ -353,7 +577,6 @@ function PaymentFlow({ contact, onConfirm, onClose }) {
     );
   }
 
-  // Enter amount
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: Colors.bg }}>
       <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", borderBottom: `1px solid ${Colors.separator}` }}>
@@ -371,8 +594,7 @@ function PaymentFlow({ contact, onConfirm, onClose }) {
             <button key={c} onClick={() => setCurrency(c)} style={{
               padding: "6px 20px", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600,
               background: currency === c ? Colors.accent : "transparent",
-              color: currency === c ? "#fff" : Colors.textSecondary,
-              transition: "all 0.2s"
+              color: currency === c ? "#fff" : Colors.textSecondary, transition: "all 0.2s",
             }}>{c}</button>
           ))}
         </div>
@@ -389,8 +611,7 @@ function PaymentFlow({ contact, onConfirm, onClose }) {
         {keypad.map(k => (
           <button key={k} onClick={() => tap(k)} style={{
             padding: "16px 0", fontSize: 24, fontWeight: 400, color: Colors.text,
-            background: "transparent", border: "none", cursor: "pointer", borderRadius: 12,
-            transition: "background 0.15s",
+            background: "transparent", border: "none", cursor: "pointer", borderRadius: 12, transition: "background 0.15s",
           }}
           onMouseDown={e => e.currentTarget.style.background = Colors.surfaceSecondary}
           onMouseUp={e => e.currentTarget.style.background = "transparent"}
@@ -402,170 +623,23 @@ function PaymentFlow({ contact, onConfirm, onClose }) {
   );
 }
 
-// ─── SafetyNumber ───
-function SafetyNumber({ contact, onClose }) {
-  const digits = Array.from({ length: 60 }, (_, i) => ((i * 7 + 3) % 10).toString()).join("");
-  const groups = [];
-  for (let i = 0; i < 60; i += 5) groups.push(digits.slice(i, i + 5));
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: Colors.bg }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", borderBottom: `1px solid ${Colors.separator}` }}>
-        <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><IconBack /></button>
-        <span style={{ flex: 1, textAlign: "center", color: Colors.text, fontWeight: 600, fontSize: 17 }}>Safety Number</span>
-        <div style={{ width: 28 }} />
-      </div>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, padding: 24 }}>
-        <div style={{ width: 60, height: 60, borderRadius: 30, background: `linear-gradient(135deg, ${Colors.paymentGradientStart}, ${Colors.paymentGradientEnd})`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 600, fontSize: 20 }}>{contact.avatar}</div>
-        <div style={{ color: Colors.text, fontWeight: 600, fontSize: 18 }}>{contact.name}</div>
-        <div style={{ color: Colors.textSecondary, fontSize: 13, textAlign: "center", maxWidth: 280 }}>
-          Compare these numbers with {contact.name.split(" ")[0]} to verify end-to-end encryption.
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px 16px", fontFamily: "monospace", fontSize: 18, fontWeight: 600, color: Colors.text, background: Colors.surfaceSecondary, padding: "20px 24px", borderRadius: 16 }}>
-          {groups.map((g, i) => <span key={i}>{g}</span>)}
-        </div>
-        <div style={{ width: 120, height: 120, background: Colors.surface, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${Colors.separator}` }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 6px)", gap: 2 }}>
-            {Array.from({ length: 49 }, (_, i) => (
-              <div key={i} style={{ width: 6, height: 6, background: Math.random() > 0.4 ? Colors.text : "transparent" }} />
-            ))}
-          </div>
-        </div>
-        <div style={{ fontSize: 12, color: Colors.textTertiary }}>QR Code — Scan to verify</div>
-      </div>
-    </div>
-  );
-}
-
-// ─── BalanceView ───
-function BalanceView() {
-  const balance = 12.75;
-  const usdEquiv = (balance * 0.24).toFixed(2);
-  const grouped = {};
-  transactions.forEach(t => { if (!grouped[t.date]) grouped[t.date] = []; grouped[t.date].push(t); });
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ padding: "12px 16px 4px", fontSize: 28, fontWeight: 700, color: Colors.text }}>Balance</div>
-      <div style={{ padding: "20px 16px", textAlign: "center" }}>
-        <div style={{ fontSize: 42, fontWeight: 700, color: Colors.text }}>{balance.toFixed(2)} <span style={{ fontSize: 18, color: Colors.textSecondary }}>MOB</span></div>
-        <div style={{ fontSize: 16, color: Colors.textSecondary, marginTop: 4 }}>≈ ${usdEquiv} USD</div>
-      </div>
-      <div style={{ flex: 1, overflow: "auto" }}>
-        {Object.entries(grouped).map(([date, txs]) => (
-          <div key={date}>
-            <div style={{ padding: "12px 16px 4px", fontSize: 13, fontWeight: 600, color: Colors.textTertiary, textTransform: "uppercase" }}>{date}</div>
-            {txs.map(tx => (
-              <div key={tx.id} style={{ display: "flex", alignItems: "center", padding: "12px 16px", borderBottom: `1px solid ${Colors.separator}`, gap: 12 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 18, background: tx.amount > 0 ? "rgba(48,209,88,0.15)" : "rgba(255,69,58,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontSize: 16 }}>{tx.amount > 0 ? "↓" : "↑"}</span>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ color: Colors.text, fontSize: 15, fontWeight: 500 }}>{tx.peer}</div>
-                  <div style={{ color: Colors.textSecondary, fontSize: 13 }}>{tx.memo}</div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ color: tx.amount > 0 ? Colors.green : Colors.text, fontSize: 15, fontWeight: 600 }}>{tx.amount > 0 ? "+" : ""}{tx.amount.toFixed(2)} MOB</div>
-                  <div style={{ color: Colors.textTertiary, fontSize: 12 }}>{tx.time}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── SettingsView ───
-function SettingsView() {
-  const [notifs, setNotifs] = useState(true);
-  const Row = ({ label, value, toggle, onClick }) => (
-    <div onClick={onClick} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: `1px solid ${Colors.separator}`, cursor: onClick ? "pointer" : "default" }}>
-      <span style={{ color: Colors.text, fontSize: 15 }}>{label}</span>
-      {value && <span style={{ color: Colors.textSecondary, fontSize: 15 }}>{value}</span>}
-      {toggle !== undefined && (
-        <div onClick={e => { e.stopPropagation(); setNotifs(!notifs); }} style={{ width: 48, height: 28, borderRadius: 14, background: toggle ? Colors.green : Colors.surfaceSecondary, position: "relative", cursor: "pointer", transition: "background 0.2s" }}>
-          <div style={{ width: 24, height: 24, borderRadius: 12, background: "#fff", position: "absolute", top: 2, left: toggle ? 22 : 2, transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.3)" }} />
-        </div>
-      )}
-    </div>
-  );
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ padding: "12px 16px 4px", fontSize: 28, fontWeight: 700, color: Colors.text }}>Settings</div>
-      <div style={{ flex: 1, overflow: "auto" }}>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 16px", gap: 8 }}>
-          <div style={{ width: 72, height: 72, borderRadius: 36, background: `linear-gradient(135deg, ${Colors.paymentGradientStart}, ${Colors.paymentGradientEnd})`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 24 }}>JZ</div>
-          <div style={{ color: Colors.text, fontWeight: 600, fontSize: 18 }}>Joshua</div>
-          <div style={{ color: Colors.textSecondary, fontSize: 13, fontFamily: "monospace" }}>ID: a7f3b9c2</div>
-        </div>
-        <div style={{ padding: "8px 16px 4px", fontSize: 13, fontWeight: 600, color: Colors.textTertiary, textTransform: "uppercase" }}>Privacy</div>
-        <Row label="Notifications" toggle={notifs} />
-        <Row label="Message Previews" value="Never" />
-        <div style={{ padding: "16px 16px 4px", fontSize: 13, fontWeight: 600, color: Colors.textTertiary, textTransform: "uppercase" }}>Security</div>
-        <Row label="Encryption Protocol" value="PQXDH + SPQR" />
-        <Row label="Post-Quantum KEM" value="ML-KEM-1024" />
-        <Row label="Signature Algorithm" value="ML-DSA-65" />
-        <div style={{ padding: "16px 16px 4px", fontSize: 13, fontWeight: 600, color: Colors.textTertiary, textTransform: "uppercase" }}>About</div>
-        <Row label="Version" value="1.0.0 (preview)" />
-        <Row label="Protocol Version" value="Veil v1.0" />
-        <div style={{ padding: "24px 16px", textAlign: "center" }}>
-          <span style={{ fontSize: 12, color: Colors.textTertiary }}>Veil — Post-Quantum Encrypted Chat & Payments</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── App Shell ───
 export default function VeilDemo() {
-  const [tab, setTab] = useState("messages");
-  const [activeContact, setActiveContact] = useState(null);
-  const [showPayment, setShowPayment] = useState(false);
-  const [showSafety, setShowSafety] = useState(false);
-  const [paymentCallback, setPaymentCallback] = useState(null);
+  const socket = useVeilSocket();
+  const [inRoom, setInRoom] = useState(false);
 
-  const openPayment = (callback) => {
-    setPaymentCallback(() => callback);
-    setShowPayment(true);
-  };
-
-  const renderContent = () => {
-    if (showSafety && activeContact) {
-      return <SafetyNumber contact={activeContact} onClose={() => setShowSafety(false)} />;
-    }
-    if (showPayment && activeContact) {
-      return (
-        <PaymentFlow
-          contact={activeContact}
-          onConfirm={(amt, cur, memo) => paymentCallback?.(amt, cur, memo)}
-          onClose={() => setShowPayment(false)}
-        />
-      );
-    }
-    if (activeContact) {
-      return (
-        <ChatView
-          contact={activeContact}
-          onBack={() => setActiveContact(null)}
-          onPayment={openPayment}
-          onSafety={() => setShowSafety(true)}
-        />
-      );
-    }
-
-    switch (tab) {
-      case "messages": return <ConversationList onSelect={setActiveContact} />;
-      case "balance": return <BalanceView />;
-      case "settings": return <SettingsView />;
-      default: return null;
-    }
+  const handleLeave = () => {
+    socket.disconnect();
+    setInRoom(false);
   };
 
   return (
-    <div style={{ width: "100%", maxWidth: 390, margin: "0 auto", height: "100vh", display: "flex", flexDirection: "column", background: Colors.bg, fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif", overflow: "hidden", borderLeft: `1px solid ${Colors.separator}`, borderRight: `1px solid ${Colors.separator}` }}>
+    <div style={{
+      width: "100%", maxWidth: 390, margin: "0 auto", height: "100vh",
+      display: "flex", flexDirection: "column", background: Colors.bg,
+      fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif",
+      overflow: "hidden", borderLeft: `1px solid ${Colors.separator}`, borderRight: `1px solid ${Colors.separator}`,
+    }}>
       <style>{`
         @keyframes bounce { 0%, 80%, 100% { transform: translateY(0) } 40% { transform: translateY(-5px) } }
         @keyframes scaleIn { 0% { transform: scale(0); opacity: 0 } 50% { transform: scale(1.2) } 100% { transform: scale(1); opacity: 1 } }
@@ -573,7 +647,7 @@ export default function VeilDemo() {
         ::-webkit-scrollbar { display: none; }
         input::placeholder { color: ${Colors.textTertiary}; }
       `}</style>
-      {/* Status bar mock */}
+      {/* Status bar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 24px 4px", fontSize: 14, fontWeight: 600, color: Colors.text }}>
         <span>9:41</span>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -581,8 +655,13 @@ export default function VeilDemo() {
           <svg width="24" height="12" viewBox="0 0 24 12"><rect x="0" y="0" width="22" height="12" rx="2" stroke={Colors.text} strokeWidth="1" fill="none"/><rect x="22.5" y="3.5" width="1.5" height="5" rx="0.5" fill={Colors.text}/><rect x="1.5" y="1.5" width="16" height="9" rx="1" fill={Colors.green}/></svg>
         </div>
       </div>
-      <div style={{ flex: 1, overflow: "hidden" }}>{renderContent()}</div>
-      {!activeContact && !showPayment && !showSafety && <TabBar tab={tab} setTab={setTab} />}
+      <div style={{ flex: 1, overflow: "hidden" }}>
+        {inRoom ? (
+          <LiveChatView socket={socket} onLeave={handleLeave} />
+        ) : (
+          <JoinScreen onJoin={() => setInRoom(true)} socket={socket} />
+        )}
+      </div>
     </div>
   );
 }

@@ -23,7 +23,7 @@ public enum PQXDH: Sendable {
     // MARK: - Types
 
     /// The initial message sent from Alice to Bob to establish a session.
-    public struct InitiatorMessage: Sendable {
+    public struct InitiatorMessage: Sendable, Codable {
         /// Alice's Ed25519 identity public key.
         public let identityKey: Data
 

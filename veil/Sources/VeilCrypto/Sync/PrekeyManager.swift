@@ -178,7 +178,7 @@ public actor PrekeyManager {
         let publicKeyData = privateKey.publicKey.rawRepresentation
 
         // Sign with identity key
-        let signature = try await identityKeyPair.sign(message: publicKeyData)
+        let signature = try await identityKeyPair.sign(publicKeyData)
 
         return GeneratedSignedPrekey(
             id: id,
@@ -194,16 +194,16 @@ public actor PrekeyManager {
         let id = nextPrekeyId
         nextPrekeyId += 1
 
-        let kemKeyPair = try MLKEM1024.generateKeyPair()
+        let kemKeyPair = try MLKEM1024KeyPair.generate()
         let publicKeyData = kemKeyPair.publicKey
 
         // Sign with identity key
-        let signature = try await identityKeyPair.sign(message: publicKeyData)
+        let signature = try await identityKeyPair.sign(publicKeyData)
 
         return GeneratedSignedPrekey(
             id: id,
             publicKey: publicKeyData,
-            privateKey: kemKeyPair.privateKey,
+            privateKey: kemKeyPair.secretKey,
             signature: signature.serialized,
             createdAt: Date()
         )
@@ -238,11 +238,11 @@ public actor PrekeyManager {
             let id = nextPrekeyId
             nextPrekeyId += 1
 
-            let kemKeyPair = try MLKEM1024.generateKeyPair()
+            let kemKeyPair = try MLKEM1024KeyPair.generate()
             otps.append(GeneratedPQOneTimePrekey(
                 id: id,
                 publicKey: kemKeyPair.publicKey,
-                privateKey: kemKeyPair.privateKey
+                privateKey: kemKeyPair.secretKey
             ))
         }
 
@@ -401,6 +401,11 @@ public actor PrekeyManager {
     /// Get the current PQ signed prekey private key (for session responder role).
     public func pqSignedPrekeyPrivateKey() -> SecureBytes? {
         currentPQSignedPrekey?.privateKey
+    }
+
+    /// Get the current PQ signed prekey public key (for reconstructing MLKEM1024KeyPair).
+    public func pqSignedPrekeyPublicKey() -> Data? {
+        currentPQSignedPrekey?.publicKey
     }
 
     // MARK: - Pool Status

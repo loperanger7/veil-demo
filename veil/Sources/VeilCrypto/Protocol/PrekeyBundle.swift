@@ -104,7 +104,7 @@ public struct PQOneTimePrekey: Sendable, Identifiable {
 /// A consumed prekey selection for the PQXDH initiator message.
 /// Contains the IDs of which prekeys were used, so the recipient
 /// knows which private keys to use for decapsulation/DH.
-public struct PrekeySelection: Sendable {
+public struct PrekeySelection: Sendable, Codable {
     public let signedPrekeyId: UInt32
     public let oneTimePrekeyId: UInt32?
     public let pqOneTimePrekeyId: UInt32?
