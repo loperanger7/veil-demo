@@ -41,7 +41,7 @@
 			children = (
 				A10000A0 /* AppEntry.swift */,
 			);
-			path = ../AppHost;
+			path = AppHost;
 			sourceTree = "<group>";
 		};
 		A1000031 /* Products */ = {
@@ -94,7 +94,7 @@
 			);
 			mainGroup = A1000030 /* Root */;
 			packageReferences = (
-				A1000003 /* XCLocalSwiftPackageReference ".." */,
+				A1000003 /* XCLocalSwiftPackageReference "." */,
 			);
 			productRefGroup = A1000031 /* Products */;
 			projectDirPath = "";
@@ -307,9 +307,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		A1000003 /* XCLocalSwiftPackageReference ".." */ = {
+		A1000003 /* XCLocalSwiftPackageReference "." */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = "..";
+			relativePath = .;
 		};
 /* End XCLocalSwiftPackageReference section */
 
