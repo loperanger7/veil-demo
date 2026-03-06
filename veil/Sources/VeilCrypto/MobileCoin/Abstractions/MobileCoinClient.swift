@@ -38,8 +38,8 @@ public actor MobileCoinClient {
     /// Validate that a derived key is a valid Ristretto255 scalar.
     /// - Parameter keyBytes: Raw key material (expected 32 bytes).
     /// - Returns: `true` if the key is valid on the curve.
-    public func isValidScalar(_ keyBytes: SecureBytes) -> Bool {
-        let data = keyBytes.withUnsafeBytes { Data($0) }
+    public func isValidScalar(_ keyBytes: SecureBytes) throws -> Bool {
+        let data = try keyBytes.withUnsafeBytes { Data($0) }
         return sdk.isValidRistrettoScalar(data)
     }
 
@@ -108,7 +108,7 @@ public actor MobileCoinClient {
         spendKey: SecureBytes,
         fee: UInt64
     ) throws -> (transactionBytes: Data, txHash: Data) {
-        let spendKeyData = spendKey.withUnsafeBytes { Data($0) }
+        let spendKeyData = try spendKey.withUnsafeBytes { Data($0) }
 
         let txBytes = try sdk.buildTransaction(
             inputs: inputs,
@@ -143,7 +143,7 @@ public actor MobileCoinClient {
         txoPublicKey: Data,
         spendKey: SecureBytes
     ) throws -> Data {
-        let spendKeyData = spendKey.withUnsafeBytes { Data($0) }
+        let spendKeyData = try spendKey.withUnsafeBytes { Data($0) }
         return try sdk.computeKeyImage(txoPublicKey: txoPublicKey, spendKey: spendKeyData)
     }
 
@@ -159,8 +159,8 @@ public actor MobileCoinClient {
         encryptedAmount: Data,
         sharedSecret: Data,
         viewKey: SecureBytes
-    ) -> UInt64? {
-        let viewKeyData = viewKey.withUnsafeBytes { Data($0) }
+    ) throws -> UInt64? {
+        let viewKeyData = try viewKey.withUnsafeBytes { Data($0) }
         return sdk.decryptTXOAmount(
             encryptedAmount: encryptedAmount,
             sharedSecret: sharedSecret,

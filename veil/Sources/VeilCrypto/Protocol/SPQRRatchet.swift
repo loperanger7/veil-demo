@@ -31,7 +31,7 @@ public struct SPQRRatchet: Sendable {
     // MARK: - Types
 
     /// The current phase of the SPQR protocol.
-    public enum Phase: Sendable, Equatable {
+    public enum Phase: Sendable {
         /// Idle — no SPQR step in progress.
         case idle
 
