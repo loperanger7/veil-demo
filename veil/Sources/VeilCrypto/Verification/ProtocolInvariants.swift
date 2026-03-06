@@ -248,7 +248,7 @@ public enum DomainSeparationInvariant: Sendable {
         }
 
         // Invariant 2: Format check — "Veil:<Context>:v<N>"
-        let formatRegex = /^Veil:[A-Za-z:]+:v\d+$/
+        let formatRegex = try Regex("^Veil:[A-Za-z:]+:v\\d+$")
         for domain in allDomains {
             if domain.rawValue.wholeMatch(of: formatRegex) == nil {
                 violations.append("INV-2: Domain '\(domain.rawValue)' doesn't match format Veil:<Context>:v<N>")
