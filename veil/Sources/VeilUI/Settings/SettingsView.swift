@@ -30,7 +30,7 @@ public struct SettingsView: View {
             Section {
                 HStack(spacing: VeilSpacing.md) {
                     Circle()
-                        .fill(Color(.systemGray4))
+                        .fill(Color.gray.opacity(0.4))
                         .frame(width: 56, height: 56)
                         .overlay(
                             Image(systemName: "person.fill")

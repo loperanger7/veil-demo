@@ -57,7 +57,7 @@ struct SafetyNumberView: View {
                             }
                         }
                         .padding(VeilSpacing.lg)
-                        .background(Color(.systemGray6))
+                        .background(Color(.sRGB, white: 0.95, opacity: 1.0))
                         .cornerRadius(12)
                         .padding(.horizontal, VeilSpacing.xl)
 

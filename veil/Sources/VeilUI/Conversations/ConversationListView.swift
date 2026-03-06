@@ -91,7 +91,7 @@ struct ConversationRow: View {
         HStack(spacing: VeilSpacing.md) {
             // Avatar circle
             Circle()
-                .fill(Color(.systemGray4))
+                .fill(Color.gray.opacity(0.4))
                 .frame(width: 48, height: 48)
                 .overlay(
                     Text(String(item.displayName.prefix(1)).uppercased())

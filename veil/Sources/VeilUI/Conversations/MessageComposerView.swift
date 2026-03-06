@@ -39,7 +39,7 @@ struct MessageComposerView: View {
             Button(action: onSend) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.title2)
-                    .foregroundColor(canSend ? VeilColors.accent : Color(.systemGray3))
+                    .foregroundColor(canSend ? VeilColors.accent : Color.gray.opacity(0.5))
             }
             .disabled(!canSend)
             .padding(.bottom, 6)

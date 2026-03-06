@@ -39,7 +39,7 @@ struct PaymentFlowView: View {
                 VStack(spacing: VeilSpacing.sm) {
                     Text(displayAmount)
                         .font(VeilTypography.amountDisplay)
-                        .foregroundColor(amount.isEmpty ? Color(.systemGray3) : .primary)
+                        .foregroundColor(amount.isEmpty ? Color.gray.opacity(0.5) : .primary)
                         .contentTransition(.numericText())
                         .animation(.snappy(duration: 0.15), value: amount)
 
