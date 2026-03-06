@@ -181,7 +181,8 @@ public enum PQXDH: Sendable {
                 signedPrekeyId: bundle.signedPrekeyId,
                 oneTimePrekeyId: selectedOPKId,
                 pqOneTimePrekeyId: selectedPQOPKId
-            )
+            ),
+            initialCiphertext: initialCiphertext
         )
 
         return InitiatorResult(sessionKey: sessionKey, message: message)
