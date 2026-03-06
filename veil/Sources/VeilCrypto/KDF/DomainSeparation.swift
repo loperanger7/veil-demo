@@ -55,6 +55,14 @@ public enum VeilDomain: String, Sendable, CaseIterable {
     /// MobileCoin view key derivation from Veil identity key.
     case mobViewKey = "Veil:MOB:view:v1"
 
+    // MARK: - Network Transport (Epic 6)
+
+    /// Traffic padding PRNG seeding for deterministic test padding.
+    case trafficPadding = "Veil:TrafficPadding:v1"
+
+    /// Configuration update signature domain.
+    case configUpdate = "Veil:ConfigUpdate:v1"
+
     // MARK: - Access
 
     /// The raw UTF-8 bytes of this domain separation string.

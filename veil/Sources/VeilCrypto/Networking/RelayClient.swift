@@ -1,5 +1,5 @@
 // VEIL — Relay Client
-// Tickets: VEIL-201, VEIL-202, VEIL-203, VEIL-301
+// Tickets: VEIL-201, VEIL-202, VEIL-203, VEIL-301, VEIL-601, VEIL-602, VEIL-603
 // Spec reference: Section 2.1
 //
 // Async HTTP/2 client for the Veil Relay Service.
@@ -7,7 +7,9 @@
 //   - Protobuf binary content type
 //   - Anonymous token authentication via X-Veil-Token header
 //   - Exponential backoff with jitter on transient failures
-//   - Certificate pinning via VeilTLSDelegate
+//   - TLS 1.3 + certificate pinning via VeilTLSDelegate (VEIL-601)
+//   - Traffic padding on message payloads (VEIL-602)
+//   - Domain fronting for censorship resistance (VEIL-603)
 //   - Zero-knowledge logging (never logs message content or sender)
 
 import Foundation
@@ -24,26 +26,40 @@ public struct RelayConfiguration: Sendable {
     public let maxRetries: Int
     /// Base delay for exponential backoff (seconds).
     public let baseRetryDelay: TimeInterval
+    /// Traffic padding scheme (nil = no padding). Default: .production (VEIL-602).
+    public let paddingScheme: PaddingScheme?
+    /// Domain fronting configuration (nil = no fronting). (VEIL-603).
+    public let frontingConfig: FrontingConfiguration?
+    /// User's detected region for fronting profile selection.
+    public let regionCode: RegionCode?
 
     public init(
         baseURL: URL,
         pinning: PinningConfiguration,
         maxRetries: Int = 3,
-        baseRetryDelay: TimeInterval = 1.0
+        baseRetryDelay: TimeInterval = 1.0,
+        paddingScheme: PaddingScheme? = .production,
+        frontingConfig: FrontingConfiguration? = nil,
+        regionCode: RegionCode? = nil
     ) {
         self.baseURL = baseURL
         self.pinning = pinning
         self.maxRetries = maxRetries
         self.baseRetryDelay = baseRetryDelay
+        self.paddingScheme = paddingScheme
+        self.frontingConfig = frontingConfig
+        self.regionCode = regionCode
     }
 
-    /// Development configuration for local testing.
+    /// Development configuration for local testing (no padding, no fronting).
     public static func development(port: Int = 8443) -> RelayConfiguration {
         RelayConfiguration(
             baseURL: URL(string: "https://localhost:\(port)")!,
             pinning: .development(hostname: "localhost"),
             maxRetries: 1,
-            baseRetryDelay: 0.1
+            baseRetryDelay: 0.1,
+            paddingScheme: nil,
+            frontingConfig: nil
         )
     }
 }
@@ -74,6 +90,13 @@ public actor RelayClient {
     private let session: URLSession
     private let tlsDelegate: VeilTLSDelegate
 
+    /// Traffic padding encoder/decoder (VEIL-602).
+    private let paddingEncoder: CiphertextPaddingEncoder?
+    private let paddingDecoder: CiphertextPaddingDecoder?
+
+    /// Domain fronting interceptor (VEIL-603).
+    private let frontingInterceptor: DomainFrontingInterceptor?
+
     /// Device identity after registration.
     private var registrationId: UInt32?
     private var deviceId: UInt32?
@@ -82,6 +105,31 @@ public actor RelayClient {
         self.configuration = configuration
         self.tlsDelegate = VeilTLSDelegate(configuration: configuration.pinning)
 
+        // Initialize traffic padding (VEIL-602)
+        if let scheme = configuration.paddingScheme {
+            self.paddingEncoder = CiphertextPaddingEncoder(scheme: scheme)
+            self.paddingDecoder = CiphertextPaddingDecoder(scheme: scheme)
+        } else {
+            self.paddingEncoder = nil
+            self.paddingDecoder = nil
+        }
+
+        // Initialize domain fronting (VEIL-603)
+        if let frontingConfig = configuration.frontingConfig, frontingConfig.enabled {
+            let region = configuration.regionCode ?? RegionDetector.detectFromLocale()
+            let detectorConfig = CensorshipDetectorConfiguration.veilDefault(
+                relayBaseURL: configuration.baseURL
+            )
+            let detector = NetworkCensorshipDetector(configuration: detectorConfig)
+            self.frontingInterceptor = DomainFrontingInterceptor(
+                censorshipDetector: detector,
+                frontingConfig: frontingConfig,
+                detectedRegion: region
+            )
+        } else {
+            self.frontingInterceptor = nil
+        }
+
         let sessionConfig = URLSessionConfiguration.default
         sessionConfig.httpAdditionalHeaders = [
             "Content-Type": "application/x-protobuf",
@@ -89,6 +137,8 @@ public actor RelayClient {
         ]
         sessionConfig.timeoutIntervalForRequest = 30
         sessionConfig.timeoutIntervalForResource = 60
+        // Enforce TLS 1.3 minimum (VEIL-601)
+        sessionConfig.tlsMinimumSupportedProtocolVersion = .TLSv13
 
         self.session = URLSession(
             configuration: sessionConfig,
@@ -97,10 +147,32 @@ public actor RelayClient {
         )
     }
 
+    /// Access the TLS delegate (for pin rotation updates).
+    public nonisolated var tls: VeilTLSDelegate { tlsDelegate }
+
+    /// Access the fronting interceptor (for configuration updates).
+    public var fronting: DomainFrontingInterceptor? { frontingInterceptor }
+
     /// Set device identity (called after registration or restoration from Keychain).
     public func setDeviceIdentity(registrationId: UInt32, deviceId: UInt32) {
         self.registrationId = registrationId
         self.deviceId = deviceId
+    }
+
+    // MARK: - Padding Helpers (VEIL-602)
+
+    /// Pad a message body before transmission.
+    /// Returns the original body if padding is not configured.
+    public func padBody(_ body: Data) throws -> Data {
+        guard let encoder = paddingEncoder else { return body }
+        return try encoder.encodeToWire(body)
+    }
+
+    /// Strip padding from a received response body.
+    /// Returns the original body if padding is not configured.
+    public func unpadBody(_ body: Data) throws -> Data {
+        guard let decoder = paddingDecoder else { return body }
+        return try decoder.decodeFromWire(body)
     }
 
     // MARK: - Registration
@@ -335,7 +407,8 @@ public actor RelayClient {
 
     // MARK: - Internal HTTP Layer
 
-    /// Execute an HTTP request with retry logic and token attachment.
+    /// Execute an HTTP request with retry logic, token attachment,
+    /// and domain fronting (VEIL-603).
     private func performRequest(
         url: URL,
         method: String,
@@ -362,6 +435,11 @@ public actor RelayClient {
                     request.setValue(token.hexEncoded, forHTTPHeaderField: "X-Veil-Token")
                 }
 
+                // Apply domain fronting if active (VEIL-603)
+                if let interceptor = frontingInterceptor {
+                    request = await interceptor.processOutgoingRequest(request)
+                }
+
                 let (data, response) = try await session.data(for: request)
 
                 guard let httpResponse = response as? HTTPURLResponse else {
@@ -370,6 +448,8 @@ public actor RelayClient {
 
                 switch httpResponse.statusCode {
                 case 200...204:
+                    // Report success to fronting interceptor
+                    await frontingInterceptor?.reportSuccess()
                     return data
                 case 401:
                     throw RelayError.httpError(statusCode: 401, body: data)
@@ -389,9 +469,12 @@ public actor RelayClient {
             } catch let error as RelayError {
                 throw error  // Don't retry client errors
             } catch is URLError {
+                // Report failure to fronting interceptor for fallback logic
+                await frontingInterceptor?.reportFailure(RelayError.networkUnavailable)
                 lastError = RelayError.networkUnavailable
                 continue  // Retry network errors
             } catch {
+                await frontingInterceptor?.reportFailure(error)
                 lastError = error
                 continue
             }
