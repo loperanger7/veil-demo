@@ -9,6 +9,7 @@
 // beyond what iOS requires. The app should feel like it was always there.
 
 import SwiftUI
+import VeilCrypto
 
 @main
 struct VeilApp: App {
