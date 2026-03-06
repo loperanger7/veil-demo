@@ -96,9 +96,6 @@
 			packageReferences = (
 				A1000003 /* XCLocalSwiftPackageReference ".." */,
 			);
-			packageReferences = (
-				A1000003 /* XCLocalSwiftPackageReference ".." */,
-			);
 			productRefGroup = A1000031 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -308,20 +305,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		A1000003 /* XCLocalSwiftPackageReference ".." */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "..";
-		};
-/* End XCLocalSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		A1000002 /* VeilUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = VeilUI;
-		};
-/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCLocalSwiftPackageReference section */
 		A1000003 /* XCLocalSwiftPackageReference ".." */ = {
