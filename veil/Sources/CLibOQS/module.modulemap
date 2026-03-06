@@ -1,7 +1,7 @@
 // C bridging module for liboqs
 // Provides ML-KEM-1024 (FIPS 203) and ML-DSA-65 (FIPS 204)
-module CLibOQS [system] {
+// Stub implementations included for iOS simulator builds.
+module CLibOQS {
     header "shim.h"
-    link "oqs"
     export *
 }

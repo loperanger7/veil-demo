@@ -28,15 +28,11 @@ let package = Package(
     ],
     targets: [
         // C bridging module for liboqs (ML-KEM-1024, ML-DSA-65)
-        // Requires liboqs installed: brew install liboqs (macOS) or apt install liboqs-dev (Linux)
-        .systemLibrary(
+        // Uses stub implementations for iOS simulator; real liboqs for macOS CLI.
+        .target(
             name: "CLibOQS",
             path: "Sources/CLibOQS",
-            pkgConfig: "liboqs",
-            providers: [
-                .brew(["liboqs"]),
-                .apt(["liboqs-dev"]),
-            ]
+            publicHeadersPath: "."
         ),
 
         // Core cryptographic library
