@@ -99,11 +99,18 @@ public struct SettingsView: View {
 
 struct LinkedDevicesPlaceholder: View {
     var body: some View {
-        ContentUnavailableView(
-            "No Linked Devices",
-            systemImage: "link.circle",
-            description: Text("Scan a QR code from another device to link it.")
-        )
+        VStack(spacing: VeilSpacing.lg) {
+            Image(systemName: "link.circle")
+                .font(.system(size: 48))
+                .foregroundColor(.secondary)
+            Text("No Linked Devices")
+                .font(.headline)
+            Text("Scan a QR code from another device to link it.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding()
         .navigationTitle("Linked Devices")
     }
 }
