@@ -11,11 +11,12 @@
 import SwiftUI
 import VeilCrypto
 
-@main
-struct VeilApp: App {
+public struct VeilApp: App {
     @State private var contextManager = RegistrationContextManager()
 
-    var body: some Scene {
+    public init() {}
+
+    public var body: some Scene {
         WindowGroup {
             Group {
                 switch contextManager.state {
