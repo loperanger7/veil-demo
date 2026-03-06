@@ -239,7 +239,7 @@ public actor MobileCoinWallet {
                 txHash: confirmed.txHash
             )
 
-            let (receipt, receiptData) = try receiptEncryptor.constructReceipt(
+            let (_, receiptData) = try receiptEncryptor.constructReceipt(
                 confirmedTx: confirmed,
                 envelope: envelope,
                 sharedSecret: sharedSecret,
@@ -331,7 +331,7 @@ public actor MobileCoinWallet {
         let receipt = try receiptEncryptor.parseDecryptedReceipt(receiptData)
         let incomingTXOs = try await fogClient.detectIncomingTXOs()
 
-        return await receiptVerifier.verify(
+        return try await receiptVerifier.verify(
             receipt: receipt,
             viewKey: keyPair.viewKey,
             incomingTXOs: incomingTXOs

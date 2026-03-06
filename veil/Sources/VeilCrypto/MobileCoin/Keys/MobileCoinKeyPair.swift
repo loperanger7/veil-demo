@@ -69,7 +69,7 @@ public struct MobileCoinKeyPair: Sendable {
         )
 
         // Validate spend key is a valid Ristretto255 scalar
-        let spendValid = await client.isValidScalar(spendKeyBytes)
+        let spendValid = try await client.isValidScalar(spendKeyBytes)
         guard spendValid else {
             throw MobileCoinError.invalidSpendKey
         }
@@ -82,7 +82,7 @@ public struct MobileCoinKeyPair: Sendable {
         )
 
         // Validate view key is a valid Ristretto255 scalar
-        let viewValid = await client.isValidScalar(viewKeyBytes)
+        let viewValid = try await client.isValidScalar(viewKeyBytes)
         guard viewValid else {
             throw MobileCoinError.invalidViewKey
         }
@@ -108,7 +108,7 @@ public struct MobileCoinKeyPair: Sendable {
     public func storeInKeychain(service: String = "app.veil.mobilecoin") throws {
         // Store spend key with biometric requirement
         try KeychainHelper.store(
-            data: spendKey.withUnsafeBytes { Data($0) },
+            data: try spendKey.withUnsafeBytes { Data($0) },
             service: service,
             account: "spend_key",
             accessControl: .biometricCurrentSet
@@ -116,7 +116,7 @@ public struct MobileCoinKeyPair: Sendable {
 
         // Store view key with less restrictive access (for background Fog queries)
         try KeychainHelper.store(
-            data: viewKey.withUnsafeBytes { Data($0) },
+            data: try viewKey.withUnsafeBytes { Data($0) },
             service: service,
             account: "view_key",
             accessControl: .afterFirstUnlock
@@ -170,25 +170,19 @@ public struct MobileCoinKeyPair: Sendable {
         domain: VeilDomain,
         outputLength: Int
     ) throws -> SecureBytes {
-        let ikm = identityKey.withUnsafeBytes { Array($0) }
-        let info = Array(domain.rawValue.utf8)
-        // Salt: empty (Veil spec uses no salt for MOB key derivation)
-        let salt = [UInt8]()
-
-        let derived = try VeilHKDF.derive(
-            inputKeyMaterial: ikm,
-            salt: salt,
-            info: info,
-            outputLength: outputLength
+        return try VeilHKDF.deriveKey(
+            ikm: identityKey,
+            salt: nil,
+            domain: domain,
+            outputByteCount: outputLength
         )
-        return SecureBytes(bytes: derived)
     }
 
     /// Derive a mock public key from a private key (scalar-base multiplication).
     /// In production, this would use Ristretto255 basepoint multiplication.
     /// Mock: HKDF(ikm=privateKey, info="Veil:MOB:pubkey:v1") truncated to 32 bytes.
     private static func derivePublicKey(from privateKey: SecureBytes) -> Data {
-        let privBytes = privateKey.withUnsafeBytes { Array($0) }
+        let privBytes = (try? privateKey.withUnsafeBytes { Array($0) }) ?? []
         // Deterministic derivation: hash the private key with a fixed domain
         var pubKey = Data(count: 32)
         for (i, byte) in privBytes.enumerated() {

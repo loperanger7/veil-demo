@@ -55,6 +55,12 @@ public enum VeilDomain: String, Sendable, CaseIterable {
     /// MobileCoin view key derivation from Veil identity key.
     case mobViewKey = "Veil:MOB:view:v1"
 
+    /// MobileCoin peer spend key derivation for subaddress computation.
+    case mobPeerSpendKey = "Veil:MOB:peer:spend:v1"
+
+    /// MobileCoin peer view key derivation for subaddress computation.
+    case mobPeerViewKey = "Veil:MOB:peer:view:v1"
+
     // MARK: - Network Transport (Epic 6)
 
     /// Traffic padding PRNG seeding for deterministic test padding.

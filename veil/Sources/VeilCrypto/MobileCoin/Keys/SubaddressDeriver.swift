@@ -84,12 +84,12 @@ public struct SubaddressDeriver: Sendable {
         // The peer derivation uses a different domain to avoid confusion:
         let spendPubKey = try derivePeerPublicKey(
             from: peerIdentityPublicKey,
-            domain: "Veil:MOB:peer:spend:v1"
+            domain: .mobPeerSpendKey
         )
 
         let viewPubKey = try derivePeerPublicKey(
             from: peerIdentityPublicKey,
-            domain: "Veil:MOB:peer:view:v1"
+            domain: .mobPeerViewKey
         )
 
         // Derive the subaddress via the SDK
@@ -158,19 +158,16 @@ public struct SubaddressDeriver: Sendable {
     /// Uses HKDF with a peer-specific domain separator.
     private func derivePeerPublicKey(
         from identityPublicKey: Data,
-        domain: String
+        domain: VeilDomain
     ) throws -> Data {
-        let ikm = Array(identityPublicKey)
-        let info = Array(domain.utf8)
-        let salt = [UInt8]()
-
-        let derived = try VeilHKDF.derive(
-            inputKeyMaterial: ikm,
-            salt: salt,
-            info: info,
-            outputLength: 32
+        let ikm = SecureBytes(copying: identityPublicKey)
+        let derived = try VeilHKDF.deriveKey(
+            ikm: ikm,
+            salt: nil,
+            domain: domain,
+            outputByteCount: 32
         )
-        return Data(derived)
+        return try derived.copyToData()
     }
 
     /// Hash an identity key for tracking (SHA-256 truncated to 16 bytes).
